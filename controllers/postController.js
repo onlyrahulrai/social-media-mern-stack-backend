@@ -1,9 +1,10 @@
 const PostModel = require("../models/Post.model.js");
-const UserModel = require("../models/User.model.js");
 const CommentModel = require("../models/Comment.model.js");
 const ReplyModel = require("../models/Reply.model.js");
 
 exports.getPosts = async (req, res) => {
+  const page = req.query.page || 1;
+  const limit = req.query.limit || 5;
   await PostModel.find({})
     .sort({ created_at: "desc" })
     .populate("user")
@@ -18,21 +19,16 @@ exports.getPosts = async (req, res) => {
 exports.getUserPosts = async (req, res) => {
   try {
     const { userId } = req.user;
-    await UserModel.findById({ _id: userId })
-      .then((user) => {
-        PostModel.find({ user: user._id })
-          .then((posts) => {
-            res.status(200).send(posts);
-          })
-          .catch((error) => {
-            res.status(204).send({ error });
-          });
+
+    await PostModel.find({ user: userId })
+      .then((posts) => {
+        return res.status(200).json(posts);
       })
       .catch((error) => {
-        res.status(204).send({ error });
+        return res.status(204).send({ error });
       });
   } catch (error) {
-    res.status(400).send({ error });
+    return res.status(400).send({ error });
   }
 };
 
@@ -118,12 +114,14 @@ exports.getPost = async (req, res) => {
 
 exports.createPost = async (req, res) => {
   const { title, description } = req.body;
+  const photo = req.file.filename;
   const { userId } = req.user;
 
-  if (Boolean(title) && Boolean(description)) {
+  if (Boolean(title) && Boolean(description) && Boolean(photo)) {
     const post = new PostModel({
       title,
       description,
+      photo,
       user: userId,
     });
 
@@ -142,7 +140,9 @@ exports.createPost = async (req, res) => {
 exports.updatePost = async (req, res) => {
   const { id } = req.params;
   const { userId } = req.user;
-  const body = req.body;
+
+  const body = req.file ? Object.assign(req.body,{photo:req.file.filename}) : req.body;
+
   await PostModel.findOneAndUpdate(
     { _id: id, user: userId },
     { $set: body },

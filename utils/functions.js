@@ -11,3 +11,5 @@ exports.generateAccessToken = (user) => {
 exports.generateRefreshToken = (user) => {
     return jwt.sign(user, process.env.JWT_REFRESH_TOKEN_SECRET, { expiresIn: refreshTokenExpiryTime });
 }
+
+exports.capitalizeText = (text="") => text.charAt(0).toUpperCase() + text.slice(1)
