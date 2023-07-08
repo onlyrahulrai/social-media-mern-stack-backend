@@ -19,8 +19,6 @@ const Auth = async (req,res,next) => {
         // Access authorize header to validate request
         const token = req.headers.authorization.split(" ")[1]
 
-        console.log(" Token ",token)
-
         // retrive the user details for the logged in user
         const decodedToken = await jwt.verify(token,process.env.JWT_ACCESS_TOKEN_SECRET);
 

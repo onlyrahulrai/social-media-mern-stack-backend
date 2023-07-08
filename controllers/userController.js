@@ -7,6 +7,7 @@ const {
   generateRefreshToken,
 } = require("../utils/functions.js");
 const PostModel = require("../models/Post.model.js");
+const NotificationModel = require("../models/Notification.model.js");
 
 /** POST: http://localhost:9000/api/register
  * @param:{
@@ -121,7 +122,7 @@ exports.login = async (req, res) => {
       .then((user) => {
         bcrypt
           .compare(password, user.password)
-          .then((passwordCheck) => {
+          .then(async (passwordCheck) => {
             if (!passwordCheck)
               return res.status(404).send({ error: "Don't have Password" });
 
@@ -140,7 +141,9 @@ exports.login = async (req, res) => {
               user.toJSON()
             );
 
-            return res.status(200).send({ id, ...rest, access, refresh });
+            const countOfNotification = await(await NotificationModel.find({created_for:{$in:id}})).length
+
+            return res.status(200).send({ id, ...rest,countOfNotification ,access, refresh });
           })
           .catch((error) => {
             return res.status(404).send({ error: "Password does not match" });
@@ -164,7 +167,7 @@ exports.getUser = async (req, res) => {
     UserModel.findOne({ username })
       .populate({
         path: "featuredPosts",
-        select: ["_id", "title", "description", "created_at"],
+        select: ["_id", "title", "description","photo" ,"created_at"],
       })
       .select("-password")
       .then((user) => {
@@ -202,22 +205,28 @@ exports.updateUser = async (req, res) => {
     const { userId } = req.user;
 
     if (userId) {
-      const body = req.body;
+      const body = req.file
+        ? { ...req.body, profile: req.file.filename }
+        : req.body;
 
       // update the data
-      await UserModel.updateOne({ _id: userId }, body, { new: true })
+      await UserModel.findByIdAndUpdate(
+        { _id: userId },
+        { $set: body },
+        { new: true }
+      )
         .then((user) => {
-          console.log(" User ", user);
+          const data = Object.assign({}, user.toJSON());
           return res.status(201).send(user);
         })
         .catch((error) => {
-          return res.status(500).send({ error });
+          return res.status(400).send({ error });
         });
     } else {
-      return res.status(401).send({ error: "User Not Found...!" });
+      return res.status(400).send({ error: "User Not Found...!" });
     }
   } catch (error) {
-    return res.status(401).send({ error });
+    return res.status(400).send({ error });
   }
 };
 
@@ -291,10 +300,10 @@ exports.resetPassword = async (req, res) => {
           return res.status(404).send({ error: "Username not Found" });
         });
     } catch (error) {
-      return res.status(500).send({ error });
+      return res.status(404).send({ error });
     }
   } catch (error) {
-    return res.status(401).send({ error });
+    return res.status(400).send({ error });
   }
 };
 
@@ -327,8 +336,13 @@ exports.followUser = async (req, res) => {
         )
           .then((user) => {
             const key = req.headers?.friends ? "following" : "followers";
-            const value = req.headers?.friends ? user.following : followUser.followers;
-            return res.status(202).send({[key]:value,userConfig:{following:user.following}})
+            const value = req.headers?.friends
+              ? user.following
+              : followUser.followers;
+            return res.status(202).send({
+              [key]: value,
+              userConfig: { following: user.following },
+            });
           })
           .catch((error) => res.status(400).send(error));
       })
@@ -356,8 +370,13 @@ exports.unFollowUser = async (req, res) => {
         )
           .then((user) => {
             const key = req.headers?.friends ? "following" : "followers";
-            const value = req.headers?.friends ? user.following : followUser.followers;
-            return res.status(202).send({ [key]:value,userConfig:{following:user.following}})
+            const value = req.headers?.friends
+              ? user.following
+              : followUser.followers;
+            return res.status(202).send({
+              [key]: value,
+              userConfig: { following: user.following },
+            });
           })
           .catch((error) =>
             res.status(400).send({ error: "User doesn't found!" })
@@ -385,7 +404,9 @@ exports.removeUserFromFollowers = async (req, res) => {
           { $pull: { followers: followUser._id } },
           { new: true }
         )
-          .then(({followers}) => res.status(202).send({followers,userConfig:{followers}}))
+          .then(({ followers }) =>
+            res.status(202).send({ followers, userConfig: { followers } })
+          )
           .catch((error) =>
             res.status(400).send({ error: "User doesn't found!" })
           );
@@ -459,7 +480,7 @@ exports.userFollowers = async (req, res) => {
   try {
     const { username } = req.params;
 
-    const {userId:_id} = req.user;
+    const { userId: _id } = req.user;
 
     const { followers } = await UserModel.findOne({ username }).populate({
       path: "followers",
@@ -475,10 +496,11 @@ exports.userFollowers = async (req, res) => {
       ],
     });
 
-    const auth = await UserModel.findOne({ _id })
+    const auth = await UserModel.findOne({ _id });
 
-    return res.status(200).send({followers,userConfig:{followers:auth.followers}});
-
+    return res
+      .status(200)
+      .send({ followers, userConfig: { followers: auth.followers } });
   } catch (error) {
     return res.status(500).send(" Couldn't find the followers... ");
   }
@@ -503,8 +525,22 @@ exports.userFollowing = async (req, res) => {
     });
 
     return res.status(200).send(following);
-
   } catch (error) {
     return res.status(500).send(" Couldn't find the followers... ");
   }
+};
+
+exports.getUserDetails = async (req, res) => {
+  const { userId } = req.user;
+
+  console.log(" User Id ", userId);
+
+  return await UserModel.findOne({ _id: userId }).then(async (user) => {
+
+    const { _id: id, ...rest } = Object.assign({}, user.toJSON());
+    
+    const countOfNotification = await(await NotificationModel.find({created_for:{$in:id},read:false})).length
+
+    return res.status(200).json({ id,countOfNotification,...rest });
+  });
 };
