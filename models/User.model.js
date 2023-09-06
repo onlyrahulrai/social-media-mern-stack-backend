@@ -33,7 +33,13 @@ const UserSchema = new mongoose.Schema({
   }],
   bio:{
     type:String
+  },
+  online:{
+    type:Boolean,
+    default:false
   }
+},{
+  timestamps:true
 });
 
 module.exports = mongoose.model("User", UserSchema);

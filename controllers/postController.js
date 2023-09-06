@@ -3,17 +3,55 @@ const CommentModel = require("../models/Comment.model.js");
 const ReplyModel = require("../models/Reply.model.js");
 
 exports.getPosts = async (req, res) => {
-  const page = req.query.page || 1;
-  const limit = req.query.limit || 5;
-  await PostModel.find({})
-    .sort({ created_at: "desc" })
-    .populate("user")
-    .then((posts) => {
-      res.status(200).send({ posts });
-    })
-    .catch((error) => {
-      res.status(500).send({ error });
-    });
+  try {
+    console.log(" Request ", req.query);
+
+    const page = parseInt(req.query.page) || 1;
+
+    const limit = parseInt(req.query.limit) || 4;
+
+    const skip = (page - 1) * limit;
+
+    let filters = {};
+
+    if ("search" in req.query) {
+      filters["$or"] = [
+        { title: new RegExp(req.query.search, "i") },
+        { description: new RegExp(req.query.search, "i") },
+      ];
+    } else if ("category" in req.query) {
+      filters["$or"] = [
+        { "categories.value": new RegExp(req.query.category, "i") },
+        { "categories.label": new RegExp(req.query.category, "i") },
+      ]
+    }
+
+    const totalPosts = await PostModel.countDocuments(filters);
+
+    const totalPages = Math.ceil(totalPosts / limit);
+
+    const posts = await PostModel.find(filters)
+      .sort({ created_at: "desc" })
+      .populate("user")
+      .skip(skip)
+      .limit(limit);
+
+    const hasNext = page < totalPages;
+
+    const hasPrevious = page > 1;
+
+    const response = {
+      posts,
+      currentPage: page,
+      totalPages: totalPages,
+      hasNext: hasNext,
+      hasPrevious: hasPrevious,
+    };
+
+    res.status(200).json(response);
+  } catch (error) {
+    res.status(500).json({ message: "Internal server error" });
+  }
 };
 
 exports.getUserPosts = async (req, res) => {
@@ -34,6 +72,7 @@ exports.getUserPosts = async (req, res) => {
 
 exports.getPost = async (req, res) => {
   const { id } = req.params;
+
   await PostModel.findOne({ _id: id })
     .populate({
       path: "user",
@@ -102,10 +141,29 @@ exports.getPost = async (req, res) => {
         },
       ],
     })
-    .then((post) => {
+    .then(async (post) => {
       if (!post)
         return res.status(404).send({ error: "Couldn't Find the post" });
-      res.status(200).send(post);
+
+      const relatedPosts = await PostModel.find({
+        _id: { $ne: post._id },
+        user: post.user,
+      })
+        .select(["title", "description", "photo", "user"])
+        .populate({
+          path: "user",
+          select: [
+            "_id",
+            "username",
+            "firstName",
+            "lastName",
+            "profile",
+            "email",
+          ],
+        })
+        .limit(3);
+
+      res.status(200).send({ post, relatedPosts });
     })
     .catch((error) => {
       res.status(500).send({ error });
@@ -113,7 +171,7 @@ exports.getPost = async (req, res) => {
 };
 
 exports.createPost = async (req, res) => {
-  const { title, description } = req.body;
+  const { title, description, categories } = req.body;
   const photo = req.file.filename;
   const { userId } = req.user;
 
@@ -121,6 +179,7 @@ exports.createPost = async (req, res) => {
     const post = new PostModel({
       title,
       description,
+      categories: JSON.parse(categories),
       photo,
       user: userId,
     });
@@ -132,6 +191,7 @@ exports.createPost = async (req, res) => {
         res.status(201).send({ id, ...rest });
       })
       .catch((error) => {
+        console.log(" Error ", error);
         res.status(500).send({ error });
       });
   }
@@ -141,7 +201,14 @@ exports.updatePost = async (req, res) => {
   const { id } = req.params;
   const { userId } = req.user;
 
-  const body = req.file ? Object.assign(req.body,{photo:req.file.filename}) : req.body;
+  const { categories, ...rest } = req.body;
+
+  const body = req.file
+    ? Object.assign(rest, {
+        photo: req.file.filename,
+        categories: JSON.parse(categories),
+      })
+    : { ...rest, categories: JSON.parse(categories) };
 
   await PostModel.findOneAndUpdate(
     { _id: id, user: userId },
@@ -153,6 +220,7 @@ exports.updatePost = async (req, res) => {
       res.status(202).send({ id, ...rest });
     })
     .catch((error) => {
+      console.log(" Error ", error);
       res.status(500).send({ error });
     });
 };
