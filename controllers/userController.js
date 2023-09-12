@@ -23,7 +23,14 @@ const NotificationModel = require("../models/Notification.model.js");
  */
 exports.register = async (req, res) => {
   try {
-    const { username, password, profile, email } = req.body;
+    const {
+      firstName,
+      lastName,
+      username,
+      password,
+      profile,
+      email,
+    } = req.body;
 
     // check the existing user
     const existUsername = new Promise((resolve, reject) => {
@@ -58,6 +65,8 @@ exports.register = async (req, res) => {
             .hash(password, 10)
             .then((hashPassword) => {
               const user = new UserModel({
+                firstName,
+                lastName,
                 username,
                 profile,
                 email,
@@ -141,9 +150,13 @@ exports.login = async (req, res) => {
               user.toJSON()
             );
 
-            const countOfNotification = await(await NotificationModel.find({created_for:{$in:id}})).length
+            const countOfNotification = await (
+              await NotificationModel.find({ created_for: { $in: id } })
+            ).length;
 
-            return res.status(200).send({ id, ...rest,countOfNotification ,access, refresh });
+            return res
+              .status(200)
+              .send({ id, ...rest, countOfNotification, access, refresh });
           })
           .catch((error) => {
             return res.status(404).send({ error: "Password does not match" });
@@ -167,7 +180,7 @@ exports.getUser = async (req, res) => {
     UserModel.findOne({ username })
       .populate({
         path: "featuredPosts",
-        select: ["_id", "title", "description","photo" ,"created_at"],
+        select: ["_id", "title", "description", "photo", "created_at"],
       })
       .select("-password")
       .then((user) => {
@@ -533,14 +546,85 @@ exports.userFollowing = async (req, res) => {
 exports.getUserDetails = async (req, res) => {
   const { userId } = req.user;
 
-  console.log(" User Id ", userId);
-
   return await UserModel.findOne({ _id: userId }).then(async (user) => {
-
     const { _id: id, ...rest } = Object.assign({}, user.toJSON());
-    
-    const countOfNotification = await(await NotificationModel.find({created_for:{$in:id},read:false})).length
 
-    return res.status(200).json({ id,countOfNotification,...rest });
+    const countOfNotification = await (
+      await NotificationModel.find({ created_for: { $in: id }, read: false })
+    ).length;
+
+    return res.status(200).json({ id, countOfNotification, ...rest });
   });
+};
+
+exports.usersForConnections = async (req, res) => {
+  const { userId } = req.user;
+
+  return await UserModel.find({
+    _id: { $ne: userId },
+    followers: { $nin: userId },
+    following: { $nin: userId },
+  })
+    .select({ password: 0, __v: 0 })
+    .limit(5)
+    .then((data) => {
+      return res.status(200).json(data);
+    });
+};
+
+exports.latestPosts = async (req, res) => {
+  const count = await UserModel.count();
+
+  const random = Math.floor(Math.random() * count);
+
+  return PostModel.find({})
+    .skip(random)
+    .limit(5)
+    .select({ title: 1, description: 1, photo: 1 })
+    .then((posts) => {
+      res.status(200).send(posts);
+    })
+    .catch((error) => {
+      console.log(" Error ", error);
+      res.status(500).send("Internal Server Error!");
+    });
+};
+
+exports.authContects = async (req, res) => {
+  const { userId } = req.user;
+
+  const { search } = req.query;
+
+  let searches = {};
+
+  if (search) {
+    searches = {
+      $or: [
+        { firstName: new RegExp(search, "i") },
+        { lastName: new RegExp(search, "i") },
+        { email: new RegExp(search, "i") },
+        { username: new RegExp(search, "i") },
+      ],
+    };
+  }
+
+  return await UserModel.find({
+    _id: { $ne: userId },
+    $and: [
+      { $or: [{ followers: { $in: userId } }, { following: { $in: userId } }] },
+      searches,
+    ],
+  })
+    .select({
+      firstName: 1,
+      lastName: 1,
+      username: 1,
+      email: 1,
+      profile: 1,
+      online: 1,
+    })
+    .limit(5)
+    .then((data) => {
+      return res.status(200).json(data);
+    });
 };

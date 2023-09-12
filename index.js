@@ -4,6 +4,7 @@ const express = require("express");
 const cors = require("cors");
 const morgan = require("morgan");
 const router = require("./router/route.js");
+const chatRouter = require("./router/chatRouter.js");
 const connectDB = require("./config/db.js");
 const http = require("http");
 const { Server } = require("socket.io");
@@ -52,21 +53,30 @@ const io = new Server(server, {
 
 app.use("/api", router);
 
+app.use("/api/chats", chatRouter);
+
 app.get("/", (req, res) => {
   res.send("Welcome, John Doe");
 });
 
 const connection = {};
 
-io.on("connection", (socket) => {
-  // console.log("a user connected", socket.handshake.query.token);
+const chatConnection = {};
 
+const chatMessages = {};
+
+io.on("connection", async (socket) => {
+  
   if (socket.handshake.query.token) {
     const { userId, username } = jwt_decode(socket.handshake.query.token);
 
+    console.log("a user connected", username);
+
+    const user = await UserModel.findByIdAndUpdate({_id:userId},{$set:{online:true}},{new:true})
+
     connection[userId] = socket;
 
-    socket.on("postLikedNotification", async (data) => {
+    socket.on("onPostLikedRequestNotification", async (data) => {
       if (data.liked && userId !== data?.user) {
         console.log(" Post Liked Notification Event triggered ");
 
@@ -104,7 +114,7 @@ io.on("connection", (socket) => {
                     read: false,
                   }).count();
 
-                  userSocket.emit("sendPostLikedNotificationMessage", {
+                  userSocket.emit("onPostLikedResponseNotification", {
                     countOfNotification,
                     notification,
                   });
@@ -142,6 +152,7 @@ io.on("connection", (socket) => {
     });
 
     socket.on("onFollowUserRequest", (data) => {
+      console.log(" on Follow User Request ",data)
       if (data.follow && userId !== data?.user) {
         const notification = new Notification({
           content: `${capitalizeText(username)} started following you.`,
@@ -243,8 +254,17 @@ io.on("connection", (socket) => {
       }
     });
 
+    socket.on("onRequestForOnlineUsers",async (data) => {
+      socket.emit('onResponseForOnlineUsers',[1,2,3,3,4,5])
+    })
 
-    console.log(" username ", username);
+    socket.on("onJoinChatRequest",(receiverId) => {
+      socket.emit("onJoinChatResponse","Hello World")
+    })
+
+    socket.on('disconnect',async () => {
+      const user = await UserModel.findByIdAndUpdate({_id:userId},{$set:{online:false}},{new:true})
+    });
   }
 });
 
