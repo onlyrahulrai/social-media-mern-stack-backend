@@ -5,7 +5,7 @@ const MessageSchema = new mongoose.Schema({
     type:mongoose.Schema.Types.ObjectId,
     ref:"Chat"
   },
-  message: {
+  content: {
     type: String,
   },
   file: {

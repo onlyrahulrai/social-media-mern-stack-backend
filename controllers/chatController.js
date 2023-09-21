@@ -1,73 +1,5 @@
 const ChatModel = require("../models/Chat.model.js");
-const UserModel = require("../models/User.model.js");
-
-exports.onSendMessage = async (req, res) => {
-  const { userId } = req.user;
-
-  if (!req.body.message)
-    res.status(400).send({ error: "Message is required!" });
-
-  const chatData = {
-    message: req.body.message,
-    user: userId,
-  };
-
-  await ChatModel.findOne({
-    $or: [
-      { connection: connectionByAuth },
-      { connection: connectionByReceiver },
-    ],
-  })
-    .then(async (chat) => {
-      let response = null;
-
-      if (!chat) {
-        const instance = new ChatModel({
-          connection: connectionByAuth,
-        });
-
-        instance.chat.push(chatData);
-
-        response = instance.save();
-      } else {
-        response = ChatModel.findOneAndUpdate(
-          {
-            $or: [
-              { connection: connectionByAuth },
-              { connection: connectionByReceiver },
-            ],
-          },
-          { $push: { chat: chatData } },
-          { new: true }
-        );
-      }
-
-      await response
-        .then((response) => res.status(200).send(response))
-        .catch((error) => {
-          console.log(" Error ", error);
-          res.status(400).send("Couldn't send message");
-        });
-    })
-    .catch((error) => console.log(" Error ", error));
-};
-
-exports.onGetChatMessagesByConnection = async (req, res) => {
-  const { userId } = req.user;
-
-  const connectionByAuth = req.query.receiverID.concat(userId);
-
-  const connectionByReceiver = userId.concat(req.query.receiverID);
-
-  return await ChatModel.findOne({
-    $or: [
-      { connection: connectionByAuth },
-      { connection: connectionByReceiver },
-    ],
-  })
-    .then((connection) => res.status(200).send(connection.chat.limit(2)))
-    .catch((error) => console.log(" Error ", error));
-};
+const MessageModel = require("../models/Message.model.js");
 
 exports.getChats = async (req, res) => {
   try {
@@ -92,34 +24,19 @@ exports.getChats = async (req, res) => {
           { members: { $elemMatch: { $eq: recipientId } } },
         ],
       });
-
-      if (!response) {
-        const recipient = await UserModel.findOne({ _id: recipientId });
-
-        if (!recipient)
-          throw new Error(
-            ` Couldn't be fetched ${recipientId ? "chat" : "chats"} `
-          );
-
-        const data = {
-          members: [userId, recipientId],
-        };
-
-        const instance = new ChatModel(data);
-
-        response = await instance.save();
-      }
     }
 
     await ChatModel.populate(response, {
-      path: "members",
+      path: "members latestMessage",
       select: [
+        "content",
         "firstName",
         "lastName",
         "email",
         "profile",
         "username",
         "mobile",
+        "online"
       ],
     })
       .then((data) => {
@@ -133,3 +50,78 @@ exports.getChats = async (req, res) => {
     res.status(400).send(error.message);
   }
 };
+
+exports.onGetMessages = async (req, res) => {
+  try {
+    const { userId } = req.user;
+
+    const { recipientId } = req.query;
+
+    if (!recipientId) {
+      throw new Error("RecipientId is required ")
+    }
+
+    await ChatModel.findOne({
+      $and: [
+        { members: { $elemMatch: { $eq: userId } } },
+        { members: { $elemMatch: { $eq: recipientId } } },
+      ],
+    }).then(async (chat) => {
+      const messages = await MessageModel.find({ chat: chat._id }).populate({
+        path: "sender",
+        select: ["id", "profile", 'username']
+      })
+
+      return res.status(200).send(messages)
+    })
+      .catch((error) => new Error("Couldn't find the messages"))
+  } catch (error) {
+    return res.status(400).send(error.message)
+  }
+}
+
+exports.onCreateMessage = async (req, res) => {
+  try {
+    const { userId } = req.user;
+
+    let { recipientId } = req.body;
+
+    await ChatModel.findOne({
+      $and: [
+        { members: { $elemMatch: { $eq: userId } } },
+        { members: { $elemMatch: { $eq: recipientId } } },
+      ],
+    }).then(async (chat) => {
+      if (!chat) {
+        const chatData = {
+          members: [userId, recipientId],
+        };
+
+        const chatInstance = new ChatModel(chatData)
+
+        chat = await chatInstance.save()
+      }
+
+      const messageData = {
+        chat,
+        content: req.body.content,
+        sender: userId
+      }
+
+      const messageInstance = new MessageModel(messageData);
+
+      await MessageModel.populate(await messageInstance.save(), {
+        path: "sender",
+        select: ["id", "username", "profile"]
+      })
+        .then(async (message) => {
+
+          await ChatModel.findByIdAndUpdate({ _id: chat._id }, { latestMessage: message }, { new: true })
+            .then((chat) => res.status(201).send(message))
+            .catch((error) => new Error("Couldn't Update Chat with latest message"))
+        })
+    })
+  } catch (error) {
+    console.log(" Error ", error)
+  }
+}

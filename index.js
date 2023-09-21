@@ -61,12 +61,9 @@ app.get("/", (req, res) => {
 
 const connection = {};
 
-const chatConnection = {};
-
-const chatMessages = {};
 
 io.on("connection", async (socket) => {
-  
+
   if (socket.handshake.query.token) {
     const { userId, username } = jwt_decode(socket.handshake.query.token);
 
@@ -258,8 +255,12 @@ io.on("connection", async (socket) => {
       socket.emit('onResponseForOnlineUsers',[1,2,3,3,4,5])
     })
 
-    socket.on("onJoinChatRequest",(receiverId) => {
-      socket.emit("onJoinChatResponse","Hello World")
+    socket.on("onJoinChatRequest",(chat) => {
+      socket.join(chat)
+    })
+
+    socket.on("onSendMessageRequest",(message) => {
+      socket.to(message?.chat?._id).emit("onSendMessageResponse",message);
     })
 
     socket.on('disconnect',async () => {

@@ -35,7 +35,7 @@ const { notification } = require("../controllers/notificationController");
 const { Auth, verifyUser, localVariables } = require("../middleware/auth");
 const { registerMail } = require("../controllers/mailerController");
 const upload = require("../config/storage.js");
-const { onSendMessage, onGetChatMessagesByConnection, getChats } = require("../controllers/chatController");
+
 
 const router = express.Router();
 
@@ -96,10 +96,5 @@ router.route("/users-for-connections").get(Auth, usersForConnections);
 router.route("/latest-posts").get(latestPosts);
 
 router.route("/auth-contacts").get(Auth,authContects);
-
-router.route("/create-message").get(Auth,onSendMessage);
-
-router.route("/get-messages").get(Auth,onGetChatMessagesByConnection);
-
 
 module.exports = router;
