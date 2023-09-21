@@ -26,6 +26,7 @@ app.use(
     extended: true,
   })
 );
+
 app.use(
   bodyParser.urlencoded({
     limit: "30mb",
@@ -61,15 +62,15 @@ app.get("/", (req, res) => {
 
 const connection = {};
 
-
 io.on("connection", async (socket) => {
 
   if (socket.handshake.query.token) {
     const { userId, username } = jwt_decode(socket.handshake.query.token);
 
-    console.log("a user connected", username);
-
-    const user = await UserModel.findByIdAndUpdate({_id:userId},{$set:{online:true}},{new:true})
+    socket.on("onSocketConnection", async () => {
+      await UserModel.findByIdAndUpdate({ _id: userId }, { $set: { online: true } }, { new: true })
+        .then((user) => console.log(` ${username} is connected `, ))
+    })
 
     connection[userId] = socket;
 
@@ -196,7 +197,7 @@ io.on("connection", async (socket) => {
     socket.on("onCreatePostRequest",async (data) => {
 
       if (data.post) {
-        const authUser = await UserModel.findOne({_id:userId})
+        const authUser = await UserModel.findOne({ _id:userId})
 
         const followers = authUser.followers.map((follower) => follower.toString());
         const following = authUser.following.map((following) => following.toString());
@@ -214,7 +215,7 @@ io.on("connection", async (socket) => {
         notification.save().then((notification) => {
           created_for.forEach(async (user) => {
             const userSocket = connection[user];
-            
+
             console.log(" User ",user)
 
             if (userSocket) {
@@ -236,7 +237,7 @@ io.on("connection", async (socket) => {
                     created_for: { $in: user },
                     read: false,
                   }).count();
-  
+
                   userSocket.emit("onCreatePostResponse", {
                     countOfNotification,
                     notification,
@@ -252,19 +253,20 @@ io.on("connection", async (socket) => {
     });
 
     socket.on("onRequestForOnlineUsers",async (data) => {
-      socket.emit('onResponseForOnlineUsers',[1,2,3,3,4,5])
+      socket.emit('onResponseForOnlineUsers',[1, 2, 3, 3, 4, 5])
     })
 
-    socket.on("onJoinChatRequest",(chat) => {
+    socket.on("onJoinChatRequest", (chat) => {
       socket.join(chat)
     })
 
-    socket.on("onSendMessageRequest",(message) => {
-      socket.to(message?.chat?._id).emit("onSendMessageResponse",message);
+    socket.on("onSendMessageRequest", (message) => {
+      socket.to(message?.chat?._id).emit("onSendMessageResponse", message);
     })
 
-    socket.on('disconnect',async () => {
-      const user = await UserModel.findByIdAndUpdate({_id:userId},{$set:{online:false}},{new:true})
+    socket.on('disconnect', async () => {
+      await UserModel.findByIdAndUpdate({ _id: userId }, { $set: { online: false } }, { new: true })
+      .then((user) =>  console.log(` ${username} is disconnected`))
     });
   }
 });
