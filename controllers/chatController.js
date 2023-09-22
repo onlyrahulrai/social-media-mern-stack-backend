@@ -104,8 +104,14 @@ exports.onCreateMessage = async (req, res) => {
 
       const messageData = {
         chat,
-        content: req.body.content,
-        sender: userId
+        sender: userId,
+        type: req.body.type
+      }
+
+      if (req.body.type === 'message') {
+        messageData['content'] = req.body.content
+      } else {
+        messageData['file'] = req.file.filename
       }
 
       const messageInstance = new MessageModel(messageData);
