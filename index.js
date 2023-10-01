@@ -62,6 +62,8 @@ app.get("/", (req, res) => {
 
 const connection = {};
 
+let onlineUsers = [];
+
 io.on("connection", async (socket) => {
 
   if (socket.handshake.query.token) {
@@ -69,8 +71,12 @@ io.on("connection", async (socket) => {
 
     socket.on("onSocketConnection", async () => {
       await UserModel.findByIdAndUpdate({ _id: userId }, { $set: { online: true } }, { new: true })
-        .then((user) => console.log(` ${username} is connected `, ))
+        .then((user) => console.log(` ${username} is connected `,))
     })
+
+    if (!onlineUsers.includes(userId)) {
+      onlineUsers.push(userId)
+    }
 
     connection[userId] = socket;
 
@@ -150,7 +156,7 @@ io.on("connection", async (socket) => {
     });
 
     socket.on("onFollowUserRequest", (data) => {
-      console.log(" on Follow User Request ",data)
+      console.log(" on Follow User Request ", data)
       if (data.follow && userId !== data?.user) {
         const notification = new Notification({
           content: `${capitalizeText(username)} started following you.`,
@@ -194,10 +200,10 @@ io.on("connection", async (socket) => {
       }
     });
 
-    socket.on("onCreatePostRequest",async (data) => {
+    socket.on("onCreatePostRequest", async (data) => {
 
       if (data.post) {
-        const authUser = await UserModel.findOne({ _id:userId})
+        const authUser = await UserModel.findOne({ _id: userId })
 
         const followers = authUser.followers.map((follower) => follower.toString());
         const following = authUser.following.map((following) => following.toString());
@@ -207,7 +213,7 @@ io.on("connection", async (socket) => {
         const notification = new Notification({
           content: `${capitalizeText(username)} created a post.`,
           type: "post",
-          post:data?.post,
+          post: data?.post,
           created_by: userId,
           created_for
         });
@@ -216,7 +222,7 @@ io.on("connection", async (socket) => {
           created_for.forEach(async (user) => {
             const userSocket = connection[user];
 
-            console.log(" User ",user)
+            console.log(" User ", user)
 
             if (userSocket) {
               await notification
@@ -252,11 +258,12 @@ io.on("connection", async (socket) => {
       }
     });
 
-    socket.on("onRequestForOnlineUsers",async (data) => {
-      socket.emit('onResponseForOnlineUsers',[1, 2, 3, 3, 4, 5])
+    socket.on("onRequestForOnlineUsers", async (data) => {
+      socket.emit('onResponseForOnlineUsers', [1, 2, 3, 3, 4, 5])
     })
 
     socket.on("onJoinChatRequest", (chat) => {
+      console.log(" Chat Joined... ",chat)
       socket.join(chat)
     })
 
@@ -264,9 +271,30 @@ io.on("connection", async (socket) => {
       socket.to(message?.chat?._id).emit("onSendMessageResponse", message);
     })
 
+    /* ------- Calling System Socket Started ------- */
+    socket.on("onRequestForVideoCall",(data) => {
+      const {selectedContact,...rest} = data;
+
+      console.log(" On Request For Video Call... ",data)
+
+      connection[selectedContact?._id].emit("onWaitForVideoCall",data)
+    })
+
+    socket.on("onRequestDismissCall",(recipient) => {
+      connection[recipient?._id].emit("onResponseDismissCall")
+    })
+
+    socket.on("onRejectCallRequest",(caller) => {
+      console.log(" Call Rejected... ")
+      connection[caller?.id].emit("onRejectCallResponse")
+    })
+
+    /* ------- Calling System Socket Ended ------- */
+
     socket.on('disconnect', async () => {
       await UserModel.findByIdAndUpdate({ _id: userId }, { $set: { online: false } }, { new: true })
-      .then((user) =>  console.log(` ${username} is disconnected`))
+        .then((user) => console.log(` ${username} is disconnected`))
+      onlineUsers = onlineUsers.filter((uid) => uid !== userId);
     });
   }
 });

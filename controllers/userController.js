@@ -8,6 +8,7 @@ const {
 } = require("../utils/functions.js");
 const PostModel = require("../models/Post.model.js");
 const NotificationModel = require("../models/Notification.model.js");
+const ChatModel = require("../models/Chat.model.js");
 
 /** POST: http://localhost:9000/api/register
  * @param:{
@@ -134,6 +135,8 @@ exports.login = async (req, res) => {
           .then(async (passwordCheck) => {
             if (!passwordCheck)
               return res.status(404).send({ error: "Don't have Password" });
+
+            user = await UserModel.findByIdAndUpdate({ _id: user.id }, { $set: { online: true } }, { new: true })
 
             const access = generateAccessToken({
               userId: user.id,
@@ -624,7 +627,7 @@ exports.authContects = async (req, res) => {
       online: 1,
     })
     .limit(5)
-    .then((data) => {
-      return res.status(200).json(data);
+    .then((contacts) => {
+      return res.status(200).json(contacts);
     });
 };
